@@ -20,6 +20,10 @@
 
 ## 简介
 
+<p align="center">
+  <img src="ScreenShot.png" alt="OpenClaw Manager" width="380" height="511">
+</p>
+
 **OpenClaw Manager** 是一款轻量级的 macOS 原生应用，用于管理和监控 [OpenClaw] 网关服务。它使用 SwiftUI 构建了简洁直观的界面，并在菜单栏提供常驻图标，让你随时掌握网关运行状态。
 
 ## ✨ 功能特性
