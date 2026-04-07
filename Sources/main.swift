@@ -4,6 +4,7 @@ import SwiftUI
 // MARK: - JSON Models
 
 struct GatewayStatus: Codable {
+    let logFile: String?
     let service: ServiceInfo?
     let gateway: GatewayInfo?
     let port: PortInfo?
@@ -114,6 +115,9 @@ class ServiceManager: ObservableObject {
     @Published var runtimeState: String?
     @Published var probeNote: String?
     
+    // Log file path from gateway status
+    @Published var logFilePath: String?
+    
     // Detail info from health JSON
     @Published var healthOk: Bool?
     @Published var sessionCount: Int?
@@ -172,8 +176,9 @@ class ServiceManager: ObservableObject {
             // 1. Gateway status
             let process = Process()
             let pipe = Pipe()
+            let errPipe = Pipe()
             process.standardOutput = pipe
-            process.standardError = pipe
+            process.standardError = errPipe
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             process.arguments = ["-c", self.statusCommand]
             process.environment = [
@@ -223,8 +228,9 @@ class ServiceManager: ObservableObject {
     private func refreshHealthStatus() {
         let process = Process()
         let pipe = Pipe()
+        let errPipe = Pipe()
         process.standardOutput = pipe
-        process.standardError = pipe
+        process.standardError = errPipe
         process.executableURL = URL(fileURLWithPath: "/bin/zsh")
         process.arguments = ["-c", healthCommand]
         process.environment = [
@@ -302,6 +308,7 @@ class ServiceManager: ObservableObject {
         
         DispatchQueue.main.async {
             self.isRunning = running
+            self.logFilePath = status.logFile
             self.pid = status.service?.runtime?.pid
             self.serviceLoaded = status.service?.loaded
             self.runtimeState = status.service?.runtime?.state
@@ -328,6 +335,7 @@ class ServiceManager: ObservableObject {
     }
     
     private func clearDetails() {
+        logFilePath = nil
         pid = nil
         bindAddress = nil
         rpcOk = nil
@@ -387,6 +395,25 @@ class ServiceManager: ObservableObject {
         if let url = URL(string: dashboardURL) { NSWorkspace.shared.open(url) }
     }
     
+    func openLogFile() {
+        guard let path = logFilePath else {
+            showAlert(title: "无法打开日志", message: "日志文件路径未知，请确保服务正在运行。")
+            return
+        }
+        let url = URL(fileURLWithPath: path)
+        if FileManager.default.fileExists(atPath: path) {
+            NSWorkspace.shared.open(url)
+        } else {
+            // 尝试打开日志所在目录
+            let dir = url.deletingLastPathComponent()
+            if FileManager.default.fileExists(atPath: dir.path) {
+                NSWorkspace.shared.open(dir)
+            } else {
+                showAlert(title: "日志文件不存在", message: path)
+            }
+        }
+    }
+    
     // MARK: - Private
     
     private func checkPort(port: UInt16) -> Bool {
@@ -411,8 +438,9 @@ class ServiceManager: ObservableObject {
         DispatchQueue.global(qos: .userInitiated).async {
             let process = Process()
             let pipe = Pipe()
+            let errPipe = Pipe()
             process.standardOutput = pipe
-            process.standardError = pipe
+            process.standardError = errPipe
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             process.arguments = ["-c", command]
             process.environment = [
@@ -422,8 +450,11 @@ class ServiceManager: ObservableObject {
             do {
                 try process.run(); process.waitUntilExit()
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
                 let output = String(data: data, encoding: .utf8) ?? ""
-                completion(process.terminationStatus == 0, output)
+                let errOutput = String(data: errData, encoding: .utf8) ?? ""
+                let combined = output + (errOutput.isEmpty ? "" : "\n" + errOutput)
+                completion(process.terminationStatus == 0, combined)
             } catch { completion(false, error.localizedDescription) }
         }
     }
@@ -561,6 +592,7 @@ struct ContentView: View {
     private var toolButtons: some View {
         HStack(spacing: 12) {
             ToolButton(title: "控制面板", icon: "globe", color: .blue) { manager.openDashboard() }
+            ToolButton(title: "查看日志", icon: "doc.text.magnifyingglass", color: .orange) { manager.openLogFile() }
             ToolButton(title: "刷新状态", icon: "arrow.triangle.2.circlepath", color: .teal) { manager.refreshStatus() }
         }
         .padding(20)
